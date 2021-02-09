@@ -1,8 +1,6 @@
 //
 // Created by 310165137 on 09/02/2021.
 //
-
-#include "client.h"
 #include <netdb.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,6 +8,9 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include "client.h"
+#include "json.h"
+
 
 #define SERVER_NAME_LEN_MAX 255
 
@@ -65,9 +66,13 @@ int main(int argc, char *argv[])
      * with the client.
      */
 
-    write(socket_fd,"This", 5);
+    char message_received[3000];
+    memset(message_received,0x00, sizeof(message_received));
+    read(socket_fd,message_received,sizeof(message_received));
 
-    sleep(10);
+    printf("%s\n",message_received);
+    json_value *parsed_json = json_parse(message_received,sizeof message_received);
+    process_value(parsed_json,0);
 
     close(socket_fd);
     return 0;
