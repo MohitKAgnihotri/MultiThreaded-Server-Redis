@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "database.h"
 #include "server.h"
 
 #define BACKLOG 10
@@ -22,10 +23,12 @@ void SetupSignalHandler();
 
 int CreateServerSocket(int port);
 
+pthread_t CreateDataBaseConnection();
+
 int main(int argc, char *argv[])
 {
     int port, socket_fd, new_socket_fd;
-    pthread_attr_t pthread_attr;
+    pthread_attr_t pthread_client_attr, pthread_database_attr;
     pthread_arg_t *pthread_arg;
     pthread_t pthread;
     socklen_t client_address_len;
@@ -37,15 +40,16 @@ int main(int argc, char *argv[])
         scanf("%d", &port);
     }
 
+    pthread = CreateDataBaseConnection();
     socket_fd = CreateServerSocket(port);
     SetupSignalHandler();
 
     /* Initialise pthread attribute to create detached threads. */
-    if (pthread_attr_init(&pthread_attr) != 0) {
+    if (pthread_attr_init(&pthread_client_attr) != 0) {
         perror("pthread_attr_init");
         exit(1);
     }
-    if (pthread_attr_setdetachstate(&pthread_attr, PTHREAD_CREATE_DETACHED) != 0) {
+    if (pthread_attr_setdetachstate(&pthread_client_attr, PTHREAD_CREATE_DETACHED) != 0) {
         perror("pthread_attr_setdetachstate");
         exit(1);
     }
@@ -78,7 +82,7 @@ int main(int argc, char *argv[])
 
         printf("Client connected\n");
         /* Create thread to serve connection to client. */
-        if (pthread_create(&pthread, &pthread_attr, pthread_routine, (void *)pthread_arg) != 0) {
+        if (pthread_create(&pthread, &pthread_client_attr, pthread_routine, (void *)pthread_arg) != 0) {
             perror("pthread_create");
             free(pthread_arg);
             continue;
@@ -90,6 +94,24 @@ int main(int argc, char *argv[])
      * signal_handler(), meaning socket_fd would need to be a global variable.
      */
     return 0;
+}
+
+pthread_t CreateDataBaseConnection() {
+    /* Initialise pthread attribute to create detached threads. */
+    pthread_t database_thread;
+    pthread_attr_t pthread_database_attr;
+    if (pthread_attr_init(&pthread_database_attr) != 0) {
+        perror("pthread_attr_init");
+        exit(1);
+    }
+    if (pthread_attr_setdetachstate(&pthread_database_attr, PTHREAD_CREATE_DETACHED) != 0) {
+        perror("pthread_attr_setdetachstate");
+        exit(1);
+    }
+    if (pthread_create(&database_thread, &pthread_database_attr, pthread_database_routine, (void *)NULL) != 0) {
+        perror("pthread_create");
+    }
+    return database_thread;
 }
 
 int CreateServerSocket(int port)
