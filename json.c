@@ -1056,7 +1056,7 @@ static void process_object(json_value* value, int depth)
     for (x = 0; x < length; x++) {
         print_depth_shift(depth);
         printf("object[%d].name = %s\n", x, value->u.object.values[x].name);
-        process_value(value->u.object.values[x].value, depth+1);
+        json_print_parsed(value->u.object.values[x].value, depth+1);
     }
 }
 
@@ -1069,12 +1069,47 @@ static void process_array(json_value* value, int depth)
     length = value->u.array.length;
     printf("array\n");
     for (x = 0; x < length; x++) {
-        process_value(value->u.array.values[x], depth);
+        json_print_parsed(value->u.array.values[x], depth);
     }
 }
 
+struct _json_value * find_in_array(json_value* value, char * key, int depth)
+{
+    int length, x;
+    if (value == NULL) {
+        return NULL;
+    }
+    length = value->u.array.length;
+    for (x = 0; x < length; x++) {
+        return json_find_key_value(value->u.array.values[x], key, depth);
+    }
+}
 
-void process_value(json_value* value, int depth)
+struct _json_value * find_in_object(json_value* value, char * key, int depth)
+{
+    int length, x;
+    if (value == NULL) {
+        return NULL;
+    }
+    length = value->u.object.length;
+    for (x = 0; x < length; x++)
+    {
+        if (strcmp(value->u.object.values[x].name, key) == 0) {
+            if (value->u.object.values[x].value->type != json_array &&
+                value->u.object.values[x].value->type != json_object) {
+                return value->u.object.values[x].value;
+            }
+        }
+
+        if (value->u.object.values[x].value->type == json_array ||
+        value->u.object.values[x].value->type == json_object)
+        {
+            return json_find_key_value(value->u.object.values[x].value, key, depth+1);
+        }
+    }
+}
+
+void json_print_parsed(json_value* value, int depth)
 {
     int j;
     if (value == NULL) {
@@ -1092,6 +1127,36 @@ void process_value(json_value* value, int depth)
             break;
         case json_array:
             process_array(value, depth+1);
+            break;
+        case json_integer:
+            printf("int: %10" PRId64 "\n", value->u.integer);
+            break;
+        case json_double:
+            printf("double: %f\n", value->u.dbl);
+            break;
+        case json_string:
+            printf("string: %s\n", value->u.string.ptr);
+            break;
+        case json_boolean:
+            printf("bool: %d\n", value->u.boolean);
+            break;
+    }
+}
+
+struct _json_value * json_find_key_value(json_value *value, char *key, int depth) {
+    int j;
+    if (value == NULL) {
+        return NULL;
+    }
+    switch (value->type) {
+        case json_none:
+            printf("none\n");
+            break;
+        case json_object:
+            return find_in_object(value, key, depth + 1);
+            break;
+        case json_array:
+            return find_in_array(value, key, depth + 1);
             break;
         case json_integer:
             printf("int: %10" PRId64 "\n", value->u.integer);

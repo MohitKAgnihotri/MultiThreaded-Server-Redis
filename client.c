@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
 
     printf("%s\n",message_received);
     json_value *parsed_json = json_parse(message_received,sizeof message_received);
-    process_value(parsed_json,0);
+    json_print_parsed(parsed_json,0);
 
     close(socket_fd);
     return 0;

@@ -274,7 +274,8 @@ void json_value_free_ex (json_settings * settings,
                          json_value *);
 
 
-void process_value(json_value* value, int depth);
+void json_print_parsed(json_value* value, int depth);
+struct _json_value * json_find_key_value(json_value* value,char *key, int depth);
 
 #ifdef __cplusplus
 } /* extern "C" */
