@@ -8,11 +8,14 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <time.h>
 #include "client.h"
 #include "json.h"
 
 
 #define SERVER_NAME_LEN_MAX 255
+
+void PrintTime(void);
 
 int main(int argc, char *argv[])
 {
@@ -67,13 +70,32 @@ int main(int argc, char *argv[])
      */
 
     char message_received[3000];
-    memset(message_received,0x00, sizeof(message_received));
-    read(socket_fd,message_received,sizeof(message_received));
+    while(1) {
+        memset(message_received, 0x00, sizeof(message_received));
+        read(socket_fd, message_received, sizeof(message_received));
 
-    printf("%s\n",message_received);
-    json_value *parsed_json = json_parse(message_received,sizeof message_received);
-    json_print_parsed(parsed_json,0);
+        printf("%s\n", message_received);
+        json_value *parsed_json = json_parse(message_received, sizeof message_received);
+        json_print_parsed(parsed_json, 0);
+
+        PrintTime();
+
+    }
 
     close(socket_fd);
     return 0;
+}
+
+void PrintTime(void)
+{
+    time_t timer;
+    char buffer[26];
+    struct tm* tm_info;
+
+    timer = time(NULL);
+    tm_info = localtime(&timer);
+
+    strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm_info);
+    puts(buffer);
+
 }

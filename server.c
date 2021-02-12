@@ -8,10 +8,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "database.h"
+#include "sharedmemory.h"
 #include "server.h"
 
 #define BACKLOG 10
 
+
+void *shmem;
 
 /* Thread routine to serve connection to client. */
 void *pthread_routine(void *arg);
@@ -39,9 +42,16 @@ int main(int argc, char *argv[])
         printf("Enter Port: ");
         scanf("%d", &port);
     }
+    /*Create the shared memory */
+    shmem = create_shared_memory(SHM_SIZE);
 
+    /*Create the thread for the Database */
     pthread = CreateDataBaseConnection();
+
+    /*Create the server socket */
     socket_fd = CreateServerSocket(port);
+
+    /*Setup the signal handler*/
     SetupSignalHandler();
 
     /* Initialise pthread attribute to create detached threads. */
@@ -169,17 +179,43 @@ void *pthread_routine(void *arg) {
     pthread_arg_t *pthread_arg = (pthread_arg_t *)arg;
     int new_socket_fd = pthread_arg->new_socket_fd;
     struct sockaddr_in client_address = pthread_arg->client_address;
+
     /* TODO: Get arguments passed to threads here. See lines 22 and 116. */
+    struct database_cache history_client_storage[MAX_CACHE_SIZE] = {0};
+    struct database_cache current_client_storage[MAX_CACHE_SIZE] = {0};
 
     free(arg);
+    int found = 0;
+    while (1)
+    {
+        sharedmem_ReadDatabase(shmem, current_client_storage, sizeof(current_client_storage));
+        for (int i = 0; i < MAX_CACHE_SIZE; i++)
+        {
+            found = 0;
+            for (int j = 0; j < MAX_CACHE_SIZE; j++)
+            {
+                if (current_client_storage[i].key == history_client_storage[j].key)
+                {
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                write(new_socket_fd, current_client_storage[i].message, strlen(current_client_storage[i].message));
+            }
+        }
 
-    /* TODO: Put client interaction code here. For example, use
-     * write(new_socket_fd,,) and read(new_socket_fd,,) to send and receive
-     * messages with the client.
-     */
-    char message[] = "{\"adId\":\"442627441\",\"type\":\"pkw\",\"title\":\"Audi A3 Audi A3, S3 Klein-/ Kompaktwagen\",\"image\":\"https://cache.willhaben.at/mmo/1/442/627/441_1092933892.jpg\",\"price\":3999,\"price_display\":\"\\u20ac 3.999\",\"year\":\"08.2005\",\"km\":\"191.600\",\"kw\":77,\"ps\":\"104\",\"transmission\":\"Schaltgetriebe\",\"wheels\":\"Hinterrad\",\"location\":\"Taxach\",\"fuel\":\"Diesel\",\"plz\":5400,\"phonenumber\":\"\",\"phonenumber2\":\"\",\"phonenumberDesc\":\"\",\"link\":\"https://www.willhaben.at/iad/object?adId=442627441\",\"make\":\"Audi\",\"model\":\"A3\",\"autoCall\":false,\"scanProxy\":\"http://45.139.0.116:3128\",\"timeStart\":1612087924541,\"timeStartText\":\"Sun, 31 Jan 2021 11:12:04.541256\",\"timeScan\":1612087924725,\"timeScanText\":\"Sun, 31 Jan 2021 11:12:04.725259\",\"timeDetails\":1612087925355,\"timeDetailsText\":\"Sun, 31 Jan 2021 11:12:05.355257\",\"differencess\":{\"scan\":0.184,\"details\":0.181,\"total\":0.365}}";
-    write(new_socket_fd,message,strlen(message));
-    sleep(10);
+        /* TODO: Put client interaction code here. For example, use
+        * write(new_socket_fd,,) and read(new_socket_fd,,) to send and receive
+        * messages with the client.
+        */
+        //char message[] = "{\"adId\":\"442627441\",\"type\":\"pkw\",\"title\":\"Audi A3 Audi A3, S3 Klein-/ Kompaktwagen\",\"image\":\"https://cache.willhaben.at/mmo/1/442/627/441_1092933892.jpg\",\"price\":3999,\"price_display\":\"\\u20ac 3.999\",\"year\":\"08.2005\",\"km\":\"191.600\",\"kw\":77,\"ps\":\"104\",\"transmission\":\"Schaltgetriebe\",\"wheels\":\"Hinterrad\",\"location\":\"Taxach\",\"fuel\":\"Diesel\",\"plz\":5400,\"phonenumber\":\"\",\"phonenumber2\":\"\",\"phonenumberDesc\":\"\",\"link\":\"https://www.willhaben.at/iad/object?adId=442627441\",\"make\":\"Audi\",\"model\":\"A3\",\"autoCall\":false,\"scanProxy\":\"http://45.139.0.116:3128\",\"timeStart\":1612087924541,\"timeStartText\":\"Sun, 31 Jan 2021 11:12:04.541256\",\"timeScan\":1612087924725,\"timeScanText\":\"Sun, 31 Jan 2021 11:12:04.725259\",\"timeDetails\":1612087925355,\"timeDetailsText\":\"Sun, 31 Jan 2021 11:12:05.355257\",\"differencess\":{\"scan\":0.184,\"details\":0.181,\"total\":0.365}}";
+        //write(new_socket_fd, message, strlen(message));
+
+        memcpy(history_client_storage, current_client_storage, sizeof(history_client_storage));
+        sleep(2);
+    }
 
     close(new_socket_fd);
     return NULL;

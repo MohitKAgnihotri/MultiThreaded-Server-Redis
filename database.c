@@ -9,20 +9,10 @@
 #include "hiredis/hiredis.h"
 #include "database.h"
 #include "json.h"
+#include "sharedmemory.h"
 
 
-#define MAX_CACHE_SIZE 40
-#define VALID_CACHE_ENTRY 1
-#define INVALID_CACHE_ENTRY 0
-
-struct database_cache
-{
-    int valid;
-    int seen;
-    int key;
-    char *type;
-    char *message;
-};
+extern void *shmem;
 
 struct database_cache history[MAX_CACHE_SIZE], current[MAX_CACHE_SIZE];
 
@@ -106,16 +96,16 @@ void *pthread_database_routine(void *arg)
         {
             /* PING server */
             reply = redisCommand(c,"LINDEX %s %d", database_key, i);
-            PrasenPrint_ServerResponse(reply);
+            //PrasenPrint_ServerResponse(reply);
 
             json_value *parsed_json = json_parse(reply->str,reply->len);
             if (parsed_json)
             {
-                json_print_parsed(parsed_json, 0);
+                //json_print_parsed(parsed_json, 0);
 
                 /* Save message */
                 if (reply->type == REDIS_REPLY_STRING) {
-                    current[i].message = (char *) malloc(sizeof(char) * reply->len);
+                    memcpy(current[i].message, reply->str, reply->len);
                 }
 
                 /* Get the key : adId*/
@@ -127,18 +117,16 @@ void *pthread_database_routine(void *arg)
                 /* Get the permissions : type*/
                 value = json_find_key_value(parsed_json, "type", 0);
                 if (value && value->type == json_string) {
-                    current[i].type = (char *) malloc(sizeof(char) * value->u.string.length);
                     memcpy(current[i].type, value->u.string.ptr, value->u.string.length);
                 }
-                current[i].valid = 1;
-                current[i].seen = 0;
 
+                current[i].valid = 1;
+#if 0
                 /*Check if the reterived key is already seen in the history*/
                 for (int cache_loop = 0; cache_loop < MAX_CACHE_SIZE; cache_loop++)
                 {
                     if (history[cache_loop].valid == VALID_CACHE_ENTRY && history[cache_loop].key == current[i].key)
                     {
-                        current[i].seen = 1;
                         break;
                     }
                     else
@@ -146,10 +134,15 @@ void *pthread_database_routine(void *arg)
                         /* Send to the threads to communicate */
                     }
                 }
+#endif
             }
             freeReplyObject(reply);
         }
+        sharedmem_writeDatabase(shmem, current, sizeof(current));
     }
+
+
+
 }
 
 redisContext * ConnectServer(const char *hostname, const int port_num)
