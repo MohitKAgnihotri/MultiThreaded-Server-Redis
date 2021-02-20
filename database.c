@@ -8,15 +8,19 @@
 #include <unistd.h>
 #include "hiredis/hiredis.h"
 #include "database.h"
-#include "json.h"
+#include "cJSON.h"
+#include "base64.h"
 #include "sharedmemory.h"
 
 
 extern void *shmem;
 
 struct database_cache history[MAX_CACHE_SIZE], current[MAX_CACHE_SIZE];
+struct whitelist whlist_cache[MAX_WHITE_LIST_SIZE];
 
 redisContext * ConnectServer(const char *hostname, const int port_num);
+
+void ParseWhiteListFile(const char *buffer, long bufferlen);
 
 void PrasenPrint_ServerResponse(redisReply *reply)
 {
@@ -64,6 +68,7 @@ void PrasenPrint_ServerResponse(redisReply *reply)
 
 void *pthread_database_routine(void *arg)
 {
+
     unsigned int j, isunix = 0;
     redisContext *c;
     redisReply *reply;
@@ -77,8 +82,17 @@ void *pthread_database_routine(void *arg)
     printf("PING: %s\n", reply->str);
     freeReplyObject(reply);
 
+    char *buffer = NULL;
+    long bufferlen = 0;
+    if(load_file_into_memory("getWhitelist.json", &buffer, &bufferlen) == 0)
+    {
+        ParseWhiteListFile(buffer, bufferlen);
+        sharedmem_writeWhiteList(shmem, whlist_cache, sizeof(whlist_cache));
+    }
+
     while(1)
     {
+        int number_of_records = 0;
         /*Get the number of the elements in the database*/
         sleep(1);
 
@@ -89,61 +103,156 @@ void *pthread_database_routine(void *arg)
         /* PING server */
         reply = redisCommand(c,"LLEN %s", database_key);
         PrasenPrint_ServerResponse(reply);
+        if (reply && reply->type == REDIS_REPLY_INTEGER)
+        {
+            number_of_records = reply->integer;
+        }
         freeReplyObject(reply);
 
         /*We got the number of elements in the database*/
-        for (int i = 0; i < 30; i++)
+        for (int i = 0; i < number_of_records; i++)
         {
             /* PING server */
             reply = redisCommand(c,"LINDEX %s %d", database_key, i);
-            //PrasenPrint_ServerResponse(reply);
-
-            json_value *parsed_json = json_parse(reply->str,reply->len);
-            if (parsed_json)
+            if (reply)
             {
-                //json_print_parsed(parsed_json, 0);
-
-                /* Save message */
-                if (reply->type == REDIS_REPLY_STRING) {
-                    memcpy(current[i].message, reply->str, reply->len);
-                }
-
-                /* Get the key : adId*/
-                struct _json_value *value = json_find_key_value(parsed_json, "adId", 0);
-                if (value && value->type == json_string) {
-                    current[i].key = atoi(value->u.string.ptr);
-                }
-
-                /* Get the permissions : type*/
-                value = json_find_key_value(parsed_json, "type", 0);
-                if (value && value->type == json_string) {
-                    memcpy(current[i].type, value->u.string.ptr, value->u.string.length);
-                }
-
-                current[i].valid = 1;
-#if 0
-                /*Check if the reterived key is already seen in the history*/
-                for (int cache_loop = 0; cache_loop < MAX_CACHE_SIZE; cache_loop++)
+                cJSON *json = cJSON_ParseWithLength(reply->str, reply->len);
+                char *string = cJSON_Print(json);
+                if (json)
                 {
-                    if (history[cache_loop].valid == VALID_CACHE_ENTRY && history[cache_loop].key == current[i].key)
-                    {
-                        break;
+                    /* Save message */
+                    if (reply->type == REDIS_REPLY_STRING) {
+                        memcpy(current[i].message, reply->str, reply->len);
                     }
-                    else
-                    {
-                        /* Send to the threads to communicate */
+
+                    const cJSON *adId = NULL;
+                    /* Get the key : adId*/
+                    adId = cJSON_GetObjectItemCaseSensitive(json, "adId");
+                    if (cJSON_IsString(adId) && (adId->valuestring != NULL)) {
+                        current[i].key = atoi(adId->valuestring);
                     }
+
+
+                    const cJSON *type = NULL;
+                    /* Get the permissions : type*/
+                    type = cJSON_GetObjectItemCaseSensitive(json, "type");
+                    if (cJSON_IsString(type) && (type->valuestring != NULL)) {
+                        memcpy(current[i].type, type->valuestring, strlen(type->valuestring));
+                    }
+
+                    const cJSON *autoCall = NULL;
+                    /* Get the permissions : type*/
+                    autoCall = cJSON_GetObjectItemCaseSensitive(json, "autoCall");
+                    if (cJSON_IsBool(autoCall)) {
+                        current[i].auto_call = autoCall->valueint;
+                    }
+
+                    current[i].valid = 1;
                 }
-#endif
+                cJSON_Delete(json);
+                freeReplyObject(reply);
             }
-            freeReplyObject(reply);
         }
         sharedmem_writeDatabase(shmem, current, sizeof(current));
     }
-
-
-
 }
+
+void ParseWhiteListFile(const char *buffer, long bufferlen) {
+    int deviceCount = 0;
+    cJSON *iterator = NULL;
+    cJSON *json = cJSON_ParseWithLength(buffer,bufferlen);
+    char *string = cJSON_Print(json);
+    printf("%s\n",string);
+
+    cJSON_ArrayForEach(iterator, json) {
+        char permission[10][10] = {{0u}};
+        int percount = 0;
+        if (cJSON_IsObject(iterator))
+        {
+            cJSON *permissions_array = cJSON_GetObjectItem(iterator, "permissions");
+            cJSON *permissions_iterator = NULL;
+            cJSON_ArrayForEach(permissions_iterator, permissions_array)
+            {
+                if (cJSON_IsString(permissions_iterator))
+                {
+                   memcpy(permission[percount], permissions_iterator->valuestring, 10);
+                   percount++;
+                }
+            }
+
+            cJSON *devices_array = NULL;
+            cJSON *devices_iterator = NULL;
+            devices_array = cJSON_GetObjectItem(iterator, "devices");
+            cJSON_ArrayForEach(devices_iterator, devices_array)
+            {
+                if (cJSON_IsObject(devices_iterator))
+                {
+                    const cJSON *deviceId = NULL;
+                    deviceId = cJSON_GetObjectItemCaseSensitive(devices_iterator, "id");
+                    if (cJSON_IsString(deviceId))
+                    {
+                        memcpy(whlist_cache[deviceCount].deviceId, deviceId->valuestring, 16);
+                        for (int i = 0; i < percount; i++)
+                        {
+                            memcpy(whlist_cache[deviceCount].permissions[i], permission[i],10);
+                        }
+                        deviceCount++;
+                    }
+                }
+            }
+        }
+    }
+    cJSON_Delete(json);
+}
+
+
+int load_file_into_memory(const char *filename, char **buffer, long *bufflen)
+{
+    *bufflen = 0;
+    *buffer = NULL;
+    char *source = NULL;
+
+    int retval = -1;
+    FILE *fp = fopen(filename, "r");
+    if (fp != NULL)
+    {
+        /* Go to the end of the file. */
+        if (fseek(fp, 0L, SEEK_END) == 0)
+        {
+            /* Get the size of the file. */
+            long bufsize = ftell(fp);
+            if (bufsize >= 0)
+            {
+                /* Allocate our buffer to that size. */
+                source = (char*) malloc(sizeof(char) * (bufsize + 1 ));
+                *bufflen = bufsize + 1;
+                if (source)
+                {
+                    /* Go back to the start of the file. */
+                    if (fseek(fp, 0L, SEEK_SET) == 0)
+                    {
+                        /* Read the entire file into memory. */
+                        size_t newLen = fread(source, sizeof(char), bufsize, fp);
+                        if (ferror(fp) != 0)
+                        {
+                            fputs("Error reading file", stderr);
+                        }
+                        else
+                        {
+                            source[newLen] = '\0'; /* Just to be safe. */
+                            retval = 0;
+                        }
+                    }
+                }
+            }
+        }
+        fclose(fp);
+    }
+    *buffer = source;
+    return retval;
+}
+
+
 
 redisContext * ConnectServer(const char *hostname, const int port_num)
 {

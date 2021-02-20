@@ -10,7 +10,7 @@
 #include <unistd.h>
 #include <time.h>
 #include "client.h"
-#include "json.h"
+#include "cJSON.h"
 
 
 #define SERVER_NAME_LEN_MAX 255
@@ -69,14 +69,17 @@ int main(int argc, char *argv[])
      * with the client.
      */
 
+    write(socket_fd, "YjQ0ZjQyOTJiNjUzMjM0ZQ==", strlen("YjQ0ZjQyOTJiNjUzMjM0ZQ=="));
+
     char message_received[3000];
     while(1) {
         memset(message_received, 0x00, sizeof(message_received));
         read(socket_fd, message_received, sizeof(message_received));
 
         printf("%s\n", message_received);
-        json_value *parsed_json = json_parse(message_received, sizeof message_received);
-        json_print_parsed(parsed_json, 0);
+        cJSON *json = cJSON_ParseWithLength(message_received, sizeof message_received);
+        char *string = cJSON_Print(json);
+        printf("%s\n",string);
 
         PrintTime();
 

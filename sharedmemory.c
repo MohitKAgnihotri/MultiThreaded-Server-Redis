@@ -27,7 +27,7 @@ void sharedmem_writeDatabase(void* ptr, void *req, int msglen)
 {
     if (ptr && req)
     {
-        memcpy(ptr+SHARED_MEM_REQ_OFFSET+1, req,msglen);
+        memcpy(ptr+SHARED_MEM_CACHE_OFFSET+1, req,msglen);
     }
 }
 
@@ -35,6 +35,22 @@ void sharedmem_ReadDatabase(void* ptr, void *req, int msglen)
 {
     if (ptr && req)
     {
-        memcpy(req, ptr+SHARED_MEM_REQ_OFFSET+1, msglen);
+        memcpy(req, ptr+SHARED_MEM_CACHE_OFFSET+1, msglen);
+    }
+}
+
+void sharedmem_writeWhiteList(void* ptr, void *req, int msglen)
+{
+    if (ptr && req)
+    {
+        memcpy(ptr+SHARED_MEM_WHITELIST_OFFSET+1, req,msglen);
+    }
+}
+
+void sharedmem_readWhiteList(void* ptr, void *req, int msglen)
+{
+    if (ptr && req)
+    {
+        memcpy(req, ptr+SHARED_MEM_WHITELIST_OFFSET+1, msglen);
     }
 }

@@ -10,6 +10,7 @@
 #include "database.h"
 #include "sharedmemory.h"
 #include "server.h"
+#include "base64.h"
 
 #define BACKLOG 10
 
@@ -175,10 +176,52 @@ void SetupSignalHandler() {/* Assign signal handlers to signals. */
     }
 }
 
+bool hasPermission(char *type, char *permissions[10])
+{
+    for (int i = 0; i < 10; i++)
+    {
+        if (strcmp(type, permissions[i]) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 void *pthread_routine(void *arg) {
     pthread_arg_t *pthread_arg = (pthread_arg_t *)arg;
     int new_socket_fd = pthread_arg->new_socket_fd;
     struct sockaddr_in client_address = pthread_arg->client_address;
+
+    char *permissions[10] = {0};
+
+    /*Get the device id (in base64)*/
+    char message_buffer[1024];
+    int read_len = read(new_socket_fd, message_buffer, sizeof(message_buffer));
+    message_buffer[read_len] = '\0';
+
+    /*This is expected to be a base-64 encoded deviceId*/
+    size_t outlen;
+    unsigned char * deviceId = base64_decode(message_buffer, read_len, &outlen);
+
+    /* Check for the whitelist file */
+    struct whitelist *whitelist = malloc(sizeof(struct whitelist) * MAX_WHITE_LIST_SIZE);
+    sharedmem_readWhiteList(shmem, whitelist, sizeof(struct whitelist) * MAX_WHITE_LIST_SIZE);
+
+    for (int i = 0; i < MAX_WHITE_LIST_SIZE; i++)
+    {
+        if (strcmp(deviceId, whitelist[i].deviceId) == 0)
+        {
+            for (int j = 0; j < 10; j++)
+            {
+                if (whitelist[i].permissions[j][0] !='\0') {
+                    permissions[j] = (char *) malloc(sizeof(char) * 10);
+                    memcpy(permissions[j], whitelist[i].permissions[j], 10);
+                }
+            }
+        }
+    }
+
 
     /* TODO: Get arguments passed to threads here. See lines 22 and 116. */
     struct database_cache history_client_storage[MAX_CACHE_SIZE] = {0};
@@ -200,18 +243,12 @@ void *pthread_routine(void *arg) {
                     break;
                 }
             }
-            if (!found)
+
+            if (!found && hasPermission(current_client_storage[i].type, permissions))
             {
                 write(new_socket_fd, current_client_storage[i].message, strlen(current_client_storage[i].message));
             }
         }
-
-        /* TODO: Put client interaction code here. For example, use
-        * write(new_socket_fd,,) and read(new_socket_fd,,) to send and receive
-        * messages with the client.
-        */
-        //char message[] = "{\"adId\":\"442627441\",\"type\":\"pkw\",\"title\":\"Audi A3 Audi A3, S3 Klein-/ Kompaktwagen\",\"image\":\"https://cache.willhaben.at/mmo/1/442/627/441_1092933892.jpg\",\"price\":3999,\"price_display\":\"\\u20ac 3.999\",\"year\":\"08.2005\",\"km\":\"191.600\",\"kw\":77,\"ps\":\"104\",\"transmission\":\"Schaltgetriebe\",\"wheels\":\"Hinterrad\",\"location\":\"Taxach\",\"fuel\":\"Diesel\",\"plz\":5400,\"phonenumber\":\"\",\"phonenumber2\":\"\",\"phonenumberDesc\":\"\",\"link\":\"https://www.willhaben.at/iad/object?adId=442627441\",\"make\":\"Audi\",\"model\":\"A3\",\"autoCall\":false,\"scanProxy\":\"http://45.139.0.116:3128\",\"timeStart\":1612087924541,\"timeStartText\":\"Sun, 31 Jan 2021 11:12:04.541256\",\"timeScan\":1612087924725,\"timeScanText\":\"Sun, 31 Jan 2021 11:12:04.725259\",\"timeDetails\":1612087925355,\"timeDetailsText\":\"Sun, 31 Jan 2021 11:12:05.355257\",\"differencess\":{\"scan\":0.184,\"details\":0.181,\"total\":0.365}}";
-        //write(new_socket_fd, message, strlen(message));
 
         memcpy(history_client_storage, current_client_storage, sizeof(history_client_storage));
         sleep(2);
