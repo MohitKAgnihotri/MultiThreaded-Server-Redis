@@ -14,7 +14,7 @@
 #include "cJSON.h"
 
 #define BACKLOG 10
-#define TIMER_INTERVAL 9e+8
+#define TIMER_INTERVAL (5*60u)
 
 
 unsigned int poll_redis_data_white_list;
@@ -26,7 +26,7 @@ pthread_mutex_t whiteListReq_mutex;
 void *shmem;
 
 /* Thread routine to serve connection to client. */
-void *pthread_routine(void *arg);
+_Noreturn void *pthread_routine(void *arg);
 
 /* Signal handler to handle SIGTERM and SIGINT signals. */
 void signal_handler(int signal_number);
@@ -41,11 +41,12 @@ pthread_t CreateDataBaseConnection();
 void setTimer()
 {
     struct itimerval tv;
-    tv.it_interval.tv_sec = 0;
-    tv.it_interval.tv_usec = TIMER_INTERVAL;  // when timer expires, reset to 15 min
-    tv.it_value.tv_sec = 0;
-    tv.it_value.tv_usec = TIMER_INTERVAL;   // 15 min == 9e+8 us
-    setitimer(ITIMER_REAL, &tv, NULL);
+    tv.it_interval.tv_sec = TIMER_INTERVAL;
+    tv.it_interval.tv_usec = 0;  // when timer expires, reset to 15 min
+    tv.it_value.tv_sec = TIMER_INTERVAL;
+    tv.it_value.tv_usec = 0;   // 15 min == 9e+8 us
+    if (setitimer(ITIMER_REAL, &tv, NULL) != 0)
+        perror("setTimer");
 }
 
 int main(int argc, char *argv[])
@@ -231,7 +232,7 @@ char * CreateWhiteListReqJsonString(char* deviceId, char *ip_addr)
     return cJSON_Print(device);
 }
 
-void *pthread_routine(void *arg)
+_Noreturn void *pthread_routine(void *arg)
 {
     static unsigned int cache_send_poll_to_clients = 0;
     pthread_arg_t *pthread_arg = (pthread_arg_t *)arg;
@@ -321,12 +322,11 @@ void *pthread_routine(void *arg)
         memcpy(history_client_storage, current_client_storage, sizeof(history_client_storage));
         if (cache_send_poll_to_clients < send_poll_to_clients)
         {
+            printf("Sending Poll to the cleint\n");
             write(new_socket_fd, "POLL", strlen("POLL"));
+            cache_send_poll_to_clients = send_poll_to_clients;
         }
     }
-
-    close(new_socket_fd);
-    return NULL;
 }
 
 void signal_handler(int signal_number)

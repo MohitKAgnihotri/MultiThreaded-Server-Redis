@@ -38,7 +38,7 @@ void PrasenPrint_ServerResponse(redisReply *reply)
         case REDIS_REPLY_ARRAY:
             break;
         case REDIS_REPLY_INTEGER:
-            printf("Reply: %lld",reply->integer);
+            printf("Reply: %lld \n",reply->integer);
             break;
         case REDIS_REPLY_NIL:
             break;
@@ -71,7 +71,7 @@ void PrasenPrint_ServerResponse(redisReply *reply)
 
 void *pthread_database_routine(void *arg)
 {
-    static unsigned int cache_poll_redis_data_white_list = 0;
+    unsigned int cache_poll_redis_data_white_list = 0;
     unsigned int j, isunix = 0;
     redisContext *c;
     redisReply *reply;
@@ -85,7 +85,7 @@ void *pthread_database_routine(void *arg)
     printf("PING: %s\n", reply->str);
     freeReplyObject(reply);
 
-    //populate the whitelistonce
+    //populate the whitelist once
     ProcessWhiteList();
 
     while(1)
@@ -98,7 +98,7 @@ void *pthread_database_routine(void *arg)
 
         int number_of_records = 0;
         /*Get the number of the elements in the database*/
-        sleep(1);
+        sleep(60);
 
         /* Reset the state */
         memcpy(history, current, sizeof(struct database_cache) * MAX_CACHE_SIZE);
