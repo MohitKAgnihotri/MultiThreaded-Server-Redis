@@ -15,8 +15,8 @@
 
 extern void *shmem;
 
-struct database_cache history[MAX_CACHE_SIZE], current[MAX_CACHE_SIZE];
-struct whitelist whlist_cache[MAX_WHITE_LIST_SIZE];
+struct database_cache history[MAX_CACHE_SIZE] = {0}, current[MAX_CACHE_SIZE] = {0};
+struct whitelist whlist_cache[MAX_WHITE_LIST_SIZE] = {0};
 
 redisContext * ConnectServer(const char *hostname, const int port_num);
 

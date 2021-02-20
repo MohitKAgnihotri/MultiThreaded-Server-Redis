@@ -79,7 +79,9 @@ int main(int argc, char *argv[])
         printf("%s\n", message_received);
         cJSON *json = cJSON_ParseWithLength(message_received, sizeof message_received);
         char *string = cJSON_Print(json);
-        printf("%s\n",string);
+        //TODO: How to ensure the entire string is received.
+        if (string)
+            printf("%s\n",string);
 
         PrintTime();
 

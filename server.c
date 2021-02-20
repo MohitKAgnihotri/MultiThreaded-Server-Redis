@@ -178,7 +178,7 @@ void SetupSignalHandler() {/* Assign signal handlers to signals. */
 
 bool hasPermission(char *type, char *permissions[10])
 {
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; ((i < 10) && (permissions[i] != NULL)); i++)
     {
         if (strcmp(type, permissions[i]) == 0)
         {
@@ -210,7 +210,7 @@ void *pthread_routine(void *arg) {
 
     for (int i = 0; i < MAX_WHITE_LIST_SIZE; i++)
     {
-        if (strcmp(deviceId, whitelist[i].deviceId) == 0)
+        if (strncmp(deviceId, whitelist[i].deviceId,outlen) == 0)
         {
             for (int j = 0; j < 10; j++)
             {
@@ -219,6 +219,7 @@ void *pthread_routine(void *arg) {
                     memcpy(permissions[j], whitelist[i].permissions[j], 10);
                 }
             }
+            break;
         }
     }
 
