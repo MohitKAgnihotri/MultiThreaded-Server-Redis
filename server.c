@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <unistd.h>
 #include "database.h"
 #include "sharedmemory.h"
@@ -13,6 +14,11 @@
 #include "base64.h"
 
 #define BACKLOG 10
+#define TIMER_INTERVAL 9e+8
+
+
+unsigned int poll_redis_data_white_list;
+unsigned int send_poll_to_clients;
 
 
 void *shmem;
@@ -28,6 +34,17 @@ void SetupSignalHandler();
 int CreateServerSocket(int port);
 
 pthread_t CreateDataBaseConnection();
+
+
+void setTimer()
+{
+    struct itimerval tv;
+    tv.it_interval.tv_sec = 0;
+    tv.it_interval.tv_usec = TIMER_INTERVAL;  // when timer expires, reset to 15 min
+    tv.it_value.tv_sec = 0;
+    tv.it_value.tv_usec = TIMER_INTERVAL;   // 15 min == 9e+8 us
+    setitimer(ITIMER_REAL, &tv, NULL);
+}
 
 int main(int argc, char *argv[])
 {
@@ -54,6 +71,10 @@ int main(int argc, char *argv[])
 
     /*Setup the signal handler*/
     SetupSignalHandler();
+
+
+    /*Setup timer for the 15 min*/
+    setTimer();
 
     /* Initialise pthread attribute to create detached threads. */
     if (pthread_attr_init(&pthread_client_attr) != 0) {
@@ -174,6 +195,11 @@ void SetupSignalHandler() {/* Assign signal handlers to signals. */
         perror("signal");
         exit(1);
     }
+
+    if (signal(SIGALRM,signal_handler) == SIG_ERR) {
+        perror("signal");
+        exit(1);
+    }
 }
 
 bool hasPermission(char *type, char *permissions[10])
@@ -189,6 +215,7 @@ bool hasPermission(char *type, char *permissions[10])
 }
 
 void *pthread_routine(void *arg) {
+    static unsigned int cache_send_poll_to_clients = 0;
     pthread_arg_t *pthread_arg = (pthread_arg_t *)arg;
     int new_socket_fd = pthread_arg->new_socket_fd;
     struct sockaddr_in client_address = pthread_arg->client_address;
@@ -252,14 +279,26 @@ void *pthread_routine(void *arg) {
         }
 
         memcpy(history_client_storage, current_client_storage, sizeof(history_client_storage));
-        sleep(2);
+        if (cache_send_poll_to_clients < send_poll_to_clients)
+        {
+            write(new_socket_fd, "POLL", strlen("POLL"));
+        }
     }
 
     close(new_socket_fd);
     return NULL;
 }
 
-void signal_handler(int signal_number) {
-    /* TODO: Put exit cleanup code here. */
-    exit(0);
+void signal_handler(int signal_number)
+{
+    if (signal_number == SIGALRM)
+    {
+        poll_redis_data_white_list++;
+        send_poll_to_clients++;
+    }
+    else
+    {
+            /* TODO: Put exit cleanup code here. */
+            exit(0);
+    }
 }

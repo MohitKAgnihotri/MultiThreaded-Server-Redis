@@ -14,6 +14,7 @@
 
 
 extern void *shmem;
+extern unsigned int poll_redis_data_white_list;
 
 struct database_cache history[MAX_CACHE_SIZE] = {0}, current[MAX_CACHE_SIZE] = {0};
 struct whitelist whlist_cache[MAX_WHITE_LIST_SIZE] = {0};
@@ -21,6 +22,8 @@ struct whitelist whlist_cache[MAX_WHITE_LIST_SIZE] = {0};
 redisContext * ConnectServer(const char *hostname, const int port_num);
 
 void ParseWhiteListFile(const char *buffer, long bufferlen);
+
+void ProcessWhiteList();
 
 void PrasenPrint_ServerResponse(redisReply *reply)
 {
@@ -68,7 +71,7 @@ void PrasenPrint_ServerResponse(redisReply *reply)
 
 void *pthread_database_routine(void *arg)
 {
-
+    static unsigned int cache_poll_redis_data_white_list = 0;
     unsigned int j, isunix = 0;
     redisContext *c;
     redisReply *reply;
@@ -82,16 +85,16 @@ void *pthread_database_routine(void *arg)
     printf("PING: %s\n", reply->str);
     freeReplyObject(reply);
 
-    char *buffer = NULL;
-    long bufferlen = 0;
-    if(load_file_into_memory("getWhitelist.json", &buffer, &bufferlen) == 0)
-    {
-        ParseWhiteListFile(buffer, bufferlen);
-        sharedmem_writeWhiteList(shmem, whlist_cache, sizeof(whlist_cache));
-    }
+
 
     while(1)
     {
+        if (cache_poll_redis_data_white_list <  poll_redis_data_white_list)
+        {
+            ProcessWhiteList();
+            cache_poll_redis_data_white_list = poll_redis_data_white_list;
+        }
+
         int number_of_records = 0;
         /*Get the number of the elements in the database*/
         sleep(1);
@@ -154,6 +157,16 @@ void *pthread_database_routine(void *arg)
             }
         }
         sharedmem_writeDatabase(shmem, current, sizeof(current));
+    }
+}
+
+void ProcessWhiteList() {
+    char *buffer = NULL;
+    long bufferlen = 0;
+    if(load_file_into_memory("getWhitelist.json", &buffer, &bufferlen) == 0)
+    {
+        ParseWhiteListFile(buffer, bufferlen);
+        sharedmem_writeWhiteList(shmem, whlist_cache, sizeof(whlist_cache));
     }
 }
 
