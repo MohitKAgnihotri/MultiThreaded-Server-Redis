@@ -4,14 +4,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
 #include <sys/time.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include "database.h"
 #include "sharedmemory.h"
 #include "server.h"
 #include "base64.h"
+#include "cJSON.h"
 
 #define BACKLOG 10
 #define TIMER_INTERVAL 9e+8
@@ -19,6 +19,8 @@
 
 unsigned int poll_redis_data_white_list;
 unsigned int send_poll_to_clients;
+
+pthread_mutex_t whiteListReq_mutex;
 
 
 void *shmem;
@@ -72,9 +74,11 @@ int main(int argc, char *argv[])
     /*Setup the signal handler*/
     SetupSignalHandler();
 
-
     /*Setup timer for the 15 min*/
     setTimer();
+
+    /*Setup mutex for the whitelistFile write operation*/
+    pthread_mutex_init(&whiteListReq_mutex, NULL);
 
     /* Initialise pthread attribute to create detached threads. */
     if (pthread_attr_init(&pthread_client_attr) != 0) {
@@ -214,11 +218,29 @@ bool hasPermission(char *type, char *permissions[10])
     return false;
 }
 
-void *pthread_routine(void *arg) {
+char * CreateWhiteListReqJsonString(char* deviceId, char *ip_addr)
+{
+    cJSON *device = cJSON_CreateObject();
+
+    cJSON_AddStringToObject(device, deviceId, deviceId);
+    cJSON *ips = cJSON_AddArrayToObject(device, "ips");
+    cJSON *ip = cJSON_CreateObject();
+    cJSON_AddStringToObject(ip, "ip", ip_addr);
+    cJSON_AddNumberToObject(ip, "timestamp", (unsigned long)time(NULL));
+    cJSON_AddItemToArray(ips, ip);
+    return cJSON_Print(device);
+}
+
+void *pthread_routine(void *arg)
+{
     static unsigned int cache_send_poll_to_clients = 0;
     pthread_arg_t *pthread_arg = (pthread_arg_t *)arg;
     int new_socket_fd = pthread_arg->new_socket_fd;
-    struct sockaddr_in client_address = pthread_arg->client_address;
+
+    struct sockaddr_in client_address;
+    memcpy(&client_address, &pthread_arg->client_address, sizeof(struct sockaddr_in));
+
+    free(arg);
 
     char *permissions[10] = {0};
 
@@ -235,10 +257,12 @@ void *pthread_routine(void *arg) {
     struct whitelist *whitelist = malloc(sizeof(struct whitelist) * MAX_WHITE_LIST_SIZE);
     sharedmem_readWhiteList(shmem, whitelist, sizeof(struct whitelist) * MAX_WHITE_LIST_SIZE);
 
+    bool isDeviceWhiteListed = false;
     for (int i = 0; i < MAX_WHITE_LIST_SIZE; i++)
     {
         if (strncmp(deviceId, whitelist[i].deviceId,outlen) == 0)
         {
+            isDeviceWhiteListed = true;
             for (int j = 0; j < 10; j++)
             {
                 if (whitelist[i].permissions[j][0] !='\0') {
@@ -246,8 +270,24 @@ void *pthread_routine(void *arg) {
                     memcpy(permissions[j], whitelist[i].permissions[j], 10);
                 }
             }
-            break;
         }
+        if (isDeviceWhiteListed)
+            break;
+    }
+
+    if (!isDeviceWhiteListed)
+    {
+        char *string = CreateWhiteListReqJsonString(deviceId, inet_ntoa(client_address.sin_addr));
+        pthread_mutex_lock(&whiteListReq_mutex);
+        FILE *fp = fopen("WhiteListReq.json","a");
+        fprintf(fp,"%s",string);
+        fclose(fp);
+        pthread_mutex_unlock(&whiteListReq_mutex);
+
+        //start clean-up
+        free(whitelist);
+        close(new_socket_fd);
+        pthread_exit(NULL);
     }
 
 

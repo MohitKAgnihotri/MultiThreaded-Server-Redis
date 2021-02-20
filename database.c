@@ -85,7 +85,8 @@ void *pthread_database_routine(void *arg)
     printf("PING: %s\n", reply->str);
     freeReplyObject(reply);
 
-
+    //populate the whitelistonce
+    ProcessWhiteList();
 
     while(1)
     {
@@ -264,8 +265,6 @@ int load_file_into_memory(const char *filename, char **buffer, long *bufflen)
     *buffer = source;
     return retval;
 }
-
-
 
 redisContext * ConnectServer(const char *hostname, const int port_num)
 {

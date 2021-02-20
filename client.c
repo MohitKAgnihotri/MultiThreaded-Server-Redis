@@ -70,20 +70,39 @@ int main(int argc, char *argv[])
      */
 
     write(socket_fd, "YjQ0ZjQyOTJiNjUzMjM0ZQ==", strlen("YjQ0ZjQyOTJiNjUzMjM0ZQ=="));
+    //write(socket_fd, "OTFkODE2ODgwN2UwYmNjYw==", strlen("OTFkODE2ODgwN2UwYmNjYw=="));
+
+
 
     char message_received[3000];
     while(1) {
         memset(message_received, 0x00, sizeof(message_received));
-        read(socket_fd, message_received, sizeof(message_received));
+        int readlen = read(socket_fd, message_received, sizeof(message_received));
+        if (readlen > 0) {
+            printf("%s\n", message_received);
+            cJSON *json = cJSON_ParseWithLength(message_received, sizeof message_received);
+            char *string = cJSON_Print(json);
+            //TODO: How to ensure the entire string is received.
+            if (string)
+                printf("%s\n", string);
 
-        printf("%s\n", message_received);
-        cJSON *json = cJSON_ParseWithLength(message_received, sizeof message_received);
-        char *string = cJSON_Print(json);
-        //TODO: How to ensure the entire string is received.
-        if (string)
-            printf("%s\n",string);
-
-        PrintTime();
+            PrintTime();
+        }
+        else
+        {
+            if (readlen == 0)
+            {
+                //Socket is closed.
+                printf("Socket is closed by  the server \n");
+                close(socket_fd);
+                exit(0);
+            }
+            else
+            {
+                perror("socket:");
+                exit(0);
+            }
+        }
 
     }
 
